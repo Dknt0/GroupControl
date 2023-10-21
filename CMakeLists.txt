@@ -44,4 +44,5 @@ target_link_libraries(copTest
     Boost::system
     Threads::Threads
     rt
+    ${catkin_LIBRARIES}
 )
