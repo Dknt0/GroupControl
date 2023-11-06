@@ -19,11 +19,17 @@ int main(int argc, char **argv) {
         return -1;
     }
     
+    // Car car1(clientID, "Omnirob_1");
+    // Car car2(clientID, "Omnirob_2");
+    // Car car3(clientID, "Omnirob_3");
+    // Car car4(clientID, "Omnirob_4");
+    // Car car5(clientID, "Omnirob_5");
+
     Car car1(clientID, "Omnirob_1");
-    Car car2(clientID, "Omnirob_2");
-    Car car3(clientID, "Omnirob_3");
-    Car car4(clientID, "Omnirob_4");
-    Car car5(clientID, "Omnirob_5");
+    Car car2(clientID, "Omnirob_2", "Omnirob_1");
+    Car car3(clientID, "Omnirob_3", "Omnirob_2");
+    Car car4(clientID, "Omnirob_4", "Omnirob_3");
+    Car car5(clientID, "Omnirob_5", "Omnirob_4");
 
     ros::spin();
 

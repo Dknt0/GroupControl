@@ -6,7 +6,7 @@
  * Dknt 2023.10.21
 */
 
-#include "copCar.h"
+#include "copCarEnhanced.h"
 #include <ros/ros.h>
 
 class MultiCars {
@@ -14,6 +14,8 @@ class MultiCars {
 };
 
 int main(int argc, char **argv) {
+    ros::init(argc, argv, "copMatlab");
+    
     simxFinish(-1);
     int clientID = simxStart((simxChar*)"127.0.0.1", 19997, true, true, 2000, 5);
     if (clientID == -1) {
@@ -22,9 +24,12 @@ int main(int argc, char **argv) {
     }
     
     Car car1(clientID, "Omnirob_1");
+    Car car2(clientID, "Omnirob_2");
+    Car car3(clientID, "Omnirob_3");
+    Car car4(clientID, "Omnirob_4");
+    Car car5(clientID, "Omnirob_5");
 
-    while (ros::ok()) {
-        
-    }
+    ros::spin();
+
     return 0;
 }

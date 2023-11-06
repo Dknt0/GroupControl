@@ -1,0 +1,6 @@
+<launch>
+    <node pkg="copMatlab" name="copTest" type="copTest"/>
+    
+    <!-- <node pkg="copMatlab" name="copMatlab" type="copMatlab"/> -->
+
+</launch>

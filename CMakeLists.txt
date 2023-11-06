@@ -46,3 +46,18 @@ target_link_libraries(copTest
     rt
     ${catkin_LIBRARIES}
 )
+
+# copCarEnhanced
+coppeliasim_add_executable(copMatlab
+    SOURCES
+    src/copMatlab.cpp
+    ${COPPELIASIM_INCLUDE_DIR}/simLib/shared_memory.c
+    src/extApi.c
+    src/extApiPlatform.c
+)
+target_link_libraries(copMatlab
+    Boost::system
+    Threads::Threads
+    rt
+    ${catkin_LIBRARIES}
+)
