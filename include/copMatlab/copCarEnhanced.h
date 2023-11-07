@@ -22,9 +22,9 @@ extern "C" {
 
 using namespace std::chrono_literals;
 
-const double maxLVelocity = 4.0;
-const double maxAVelocity = 5.0;
-const auto stateMechinePeriod = 0.05s;
+const double maxLVelocity = 2.0;
+const double maxAVelocity = 4.0;
+const auto stateMechinePeriod = 0.01s;
 
 template <typename T>
 T clip(T v1, T v2) {
@@ -53,7 +53,8 @@ public:
         mthread_updatePose = std::thread(&Car::thread_getPose, this);
         mthread_gotoTarget = std::thread(&Car::thread_gotoTarget, this);
 
-        m_LV_signal = name + "_linear_velocity";
+        m_LX_signal = name + "_linear_velocity_x";
+        m_LY_signal = name + "_linear_velocity_y";
         m_AV_signal = name + "_angular_velocity";
 
         m_posePub = nh.advertise<geometry_msgs::Twist>(m_name + "/pose", 10);
@@ -72,15 +73,17 @@ public:
         mthread_updatePose = std::thread(&Car::thread_getPose, this);
         mthread_gotoTarget = std::thread(&Car::thread_gotoTarget, this);
 
-        m_LV_signal = name + "_linear_velocity";
+        m_LX_signal = name + "_linear_velocity_x";
+        m_LY_signal = name + "_linear_velocity_y";
         m_AV_signal = name + "_angular_velocity";
 
         m_posePub = nh.advertise<geometry_msgs::Twist>(m_name + "/pose", 10);
         m_targetSub = nh.subscribe<geometry_msgs::Twist>(m_name + "/target", 10, std::bind(&Car::cb_target, this, std::placeholders::_1));
     }
 
-    void setVelocity(const double linear_velocity, const double angular_velocity) {
-        simxSetFloatSignal(m_clientID, (simxChar*)m_LV_signal.c_str(), linear_velocity, simx_opmode_oneshot_wait);
+    void setVelocity(const double linear_velocity_x, const double linear_velocity_y, const double angular_velocity) {
+        simxSetFloatSignal(m_clientID, (simxChar*)m_LX_signal.c_str(), linear_velocity_x, simx_opmode_oneshot_wait);
+        simxSetFloatSignal(m_clientID, (simxChar*)m_LY_signal.c_str(), linear_velocity_y, simx_opmode_oneshot_wait);
         simxSetFloatSignal(m_clientID, (simxChar*)m_AV_signal.c_str(), angular_velocity, simx_opmode_oneshot_wait);
     }
 
@@ -124,6 +127,13 @@ private:
         ChangingDirection = 3,
     };
 
+    const char* stateName[4] = {
+        "Waiting",
+        "TurningToTarget",
+        "MovingToTarget",
+        "ChangingDirection",
+    };
+
     void thread_gotoTarget() {
         {
             std::unique_lock<std::mutex>(mlock_pose);
@@ -145,25 +155,27 @@ private:
                 distance = pow(ms_position[0] - ms_avoidPosition[0], 2.0);
                 distance += pow(ms_position[1] - ms_avoidPosition[1], 2.0);
                 distance = sqrt(distance);
-                std::cout << "[" << m_name << "]" << " Current distance: " << distance << std::endl; 
+                // std::cout << "[" << m_name << "]" << " Current distance: " << distance << std::endl; 
 
-                if (distance < 1.5) {
-                    setVelocity(0, 0);
+                if (distance < 2.2) {
+                    setVelocity(0, 0, 0);
                     std::this_thread::sleep_for(stateMechinePeriod);
                     continue;
                 }
             }
-            double angleDistance, distance, phi, phiDistance;
+            double angleDistance, distance, phi, phiDistance, distanceY, distanceX;
             controllerState currentState;
             {
                 std::unique_lock<std::mutex>(mlock_target);
                 std::unique_lock<std::mutex>(mlock_pose);
                 // 仿真中小车前向是 y 负方向
-                angleDistance = angles::normalize_angle(ms_currentTarget.angular.z - (ms_orientation[2] - M_PI_2));
+                angleDistance = angles::normalize_angle(ms_currentTarget.angular.z - angles::normalize_angle(ms_orientation[2] - M_PI_2));
                 distance = sqrt(pow((ms_currentTarget.linear.x - ms_position[0]), 2.) +
                                     pow((ms_currentTarget.linear.y - ms_position[1]), 2.));
                 phi = atan2(ms_currentTarget.linear.y - ms_position[1], ms_currentTarget.linear.x - ms_position[0]);
                 phiDistance = angles::normalize_angle(phi - (ms_orientation[2] - M_PI_2));
+                distanceY = sin(phiDistance) * distance;
+                distanceX = cos(phiDistance) * distance;
             }
             {
                 std::unique_lock<std::mutex>(mlock_state);
@@ -172,45 +184,51 @@ private:
             
             if (currentState == Waiting) {
                 std::this_thread::sleep_for(stateMechinePeriod);
-                setVelocity(0, 0);
+                setVelocity(0, 0, 0);
                 continue;
             }
             if (currentState == TurningToTarget) {
-                if (distance < 0.2) {
+                if (distance < 0.5) {
                     std::unique_lock<std::mutex>(mlock_target);
                     m_state = ChangingDirection;
+                    ROS_INFO("%s Change state to %s", m_name.c_str(), stateName[m_state]);
                     continue;
                 }
                 if (abs(phiDistance) < 0.1) {
                     std::unique_lock<std::mutex>(mlock_target);
                     m_state = MovingToTarget;
+                    ROS_INFO("%s Change state to %s", m_name.c_str(), stateName[m_state]);
                     continue;
                 }
-                double angularVelocity = clip(6 * phiDistance, maxAVelocity);
-                setVelocity(0, angularVelocity);
+                double angularVelocity = clip(4 * phiDistance, maxAVelocity);
+                setVelocity(0, 0, angularVelocity);
                 std::this_thread::sleep_for(stateMechinePeriod);
                 continue;
             }
             if (currentState == MovingToTarget) {
                 if (distance < 0.2) {
                     std::unique_lock<std::mutex>(mlock_target);
-                    m_state = ChangingDirection;
+                    m_state = Waiting;
+                    ROS_INFO("%s Change state to %s", m_name.c_str(), stateName[m_state]);
                     continue;
                 }
-                double angularVelocity = clip(6 * phiDistance, maxAVelocity);
-                double linearVelocity = clip(6 * distance, maxAVelocity);
-                setVelocity(linearVelocity, angularVelocity);
+                double angularVelocity = clip(0.5 * phiDistance, maxAVelocity);
+                double linearVelocityX = clip(1.5 * distanceX, maxAVelocity);
+                // double linearVelocityY = clip(1.5 * distanceY, maxAVelocity / 2);
+                setVelocity(linearVelocityX, 0, angularVelocity);
                 std::this_thread::sleep_for(stateMechinePeriod);
                 continue;
             }
             if (currentState == ChangingDirection) {
-                if (abs(angleDistance) < 0.05) {
+                if (abs(angleDistance) < 0.1) {
                     std::unique_lock<std::mutex>(mlock_target);
-                    m_state = ChangingDirection;
+                    setVelocity(0, 0, 0);
+                    m_state = Waiting;
+                    ROS_INFO("%s Change state to %s", m_name.c_str(), stateName[m_state]);
                     continue;
                 }
-                double angularVelocity = clip(6 * angleDistance, maxAVelocity);
-                setVelocity(0, angularVelocity);
+                double angularVelocity = clip(4 * angleDistance, maxAVelocity);
+                setVelocity(0, 0, angularVelocity);
                 std::this_thread::sleep_for(stateMechinePeriod);
                 continue;
             }
@@ -230,16 +248,19 @@ private:
         ms_currentTarget.linear.x = target->linear.x;
         ms_currentTarget.linear.y = target->linear.y;
         ms_currentTarget.angular.z = target->angular.z;
+        ROS_INFO("%s change target x:%f y:%f z%f.", m_name.c_str(), ms_currentTarget.linear.x, ms_currentTarget.linear.y, ms_currentTarget.linear.z);
         {
             std::unique_lock<std::mutex>(mlock_target);
             m_state = TurningToTarget;
+            ROS_INFO("%s Change state to %s", m_name.c_str(), stateName[m_state]);
         }
         return true;
     }
 
     int m_clientID;
     std::string m_name;
-    std::string m_LV_signal;
+    std::string m_LX_signal;
+    std::string m_LY_signal;
     std::string m_AV_signal;
     simxInt m_carHandel;
 

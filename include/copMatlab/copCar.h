@@ -23,7 +23,7 @@ extern "C" {
 
 using namespace std::chrono_literals;
 
-const double maxLVelocity = 4.0;
+double maxLVelocity = 6.0;
 const double maxAVelocity = 3;
 
 template <typename T>
@@ -53,7 +53,7 @@ public:
         mthread_updatePose = std::thread(&Car::thread_getPose, this);
         mthread_gotoTarget = std::thread(&Car::thread_gotoTarget, this);
         m_avoid = false;
-        m_LV_signal = name + "_linear_velocity";
+        m_LV_signal = name + "_linear_velocity_x";
         m_AV_signal = name + "_angular_velocity";
 
         m_posePub = nh.advertise<geometry_msgs::Twist>(m_name + "/pose", 10);
@@ -72,7 +72,7 @@ public:
         mthread_updatePose = std::thread(&Car::thread_getPose, this);
         mthread_gotoTarget = std::thread(&Car::thread_gotoTarget, this);
 
-        m_LV_signal = name + "_linear_velocity";
+        m_LV_signal = name + "_linear_velocity_x";
         m_AV_signal = name + "_angular_velocity";
 
         m_posePub = nh.advertise<geometry_msgs::Twist>(m_name + "/pose", 10);
@@ -136,20 +136,37 @@ private:
                 std::unique_lock<std::mutex>(mlock_avoidPose);
                 std::unique_lock<std::mutex>(mlock_pose);
                 double distance;
-                distance = pow(ms_position[0] - ms_avoidPosition[0], 2.0);
-                distance += pow(ms_position[1] - ms_avoidPosition[1], 2.0);
+                distance = pow((ms_position[0] - ms_avoidPosition[0]), 2.0);
+                distance += pow((ms_position[1] - ms_avoidPosition[1]), 2.0);
                 distance = sqrt(distance);
-                std::cout << "[" << m_name << "]" << " Current distance: " << distance << std::endl; 
+                // std::cout << "[" << m_name << "]" << " Current distance: " << distance << std::endl;
 
+                maxLVelocity = 6.0;
+                if (distance < 4) {
+                    maxLVelocity = 2.0;
+                }
+                else if (distance < 2.2) {
+                    maxLVelocity = 0.8;
+                }
+                
+
+                if (distance < 1.5) {
+                    setVelocity(-0.2, 0);
+                    std::this_thread::sleep_for(0.01s);
+                    continue;
+                }
                 if (distance < 1.8) {
                     setVelocity(0, 0);
-                    std::this_thread::sleep_for(0.05s);
+                    std::this_thread::sleep_for(0.01s);
                     continue;
                 }
             }
+            else {
+                maxLVelocity = 6.0;
+            }
             if (!m_moveState) {
                 setVelocity(0, 0);
-                std::this_thread::sleep_for(0.05s);
+                std::this_thread::sleep_for(0.01s);
                 continue;;
             }
             double angleDistance, distance, phi, phiDistance;
@@ -162,21 +179,21 @@ private:
                 phi = atan2(ms_currentTarget.linear.y - ms_position[1], ms_currentTarget.linear.x - ms_position[0]);
                 phiDistance = angles::normalize_angle(phi - (ms_orientation[2] - M_PI_2));
             }
-            if (distance > 1.0 && abs(phiDistance) > 0.3) {
-                double angularVelocity = sign(phiDistance) * maxAVelocity;
+            if (distance > 1.0 && abs(phiDistance) > 0.15) {
+                double angularVelocity = clip(10 * phiDistance, maxAVelocity);
                 // std::cout << "State 1 - distance: " << distance << " phiDistance: " << phi << std::endl;
                 setVelocity(0, angularVelocity);
             }
-            else if (distance > 0.2) {
+            else if (distance > 0.5) {
                 // std::cout << "State 2 - distance: " << distance << " phi: " << phi << std::endl;
                 // 滑移
-                double angularVelocity = 5 * phiDistance;
-                double linearVelocity = clip(2 * distance, maxAVelocity);
+                double angularVelocity = clip(15.0 * phiDistance, maxAVelocity);
+                double linearVelocity = clip(1.2 * distance, maxLVelocity);
                 setVelocity(linearVelocity, angularVelocity);
             }
-            else if (abs(angleDistance) > 0.05) {
+            else if (abs(angleDistance) > 0.1) {
                 // std::cout << "State 3 - distance: " << distance << " angleDistance: " << angleDistance << std::endl;
-                double angularVelocity = clip(2 * angleDistance, maxAVelocity);
+                double angularVelocity = clip(10 * angleDistance, maxAVelocity);
                 setVelocity(0, angularVelocity);
             }
             else {
@@ -184,15 +201,24 @@ private:
                 setVelocity(0, 0);
                 m_moveState = false;
             }
-            std::this_thread::sleep_for(0.05s);
+            std::this_thread::sleep_for(0.01s);
         }
     }
 
     bool cb_target(const geometry_msgs::Twist::ConstPtr target) {
-        std::unique_lock<std::mutex>(mlock_target);
-        ms_currentTarget.linear.x = target->linear.x;
-        ms_currentTarget.linear.y = target->linear.y;
-        ms_currentTarget.angular.z = target->angular.z;
+        {
+            std::unique_lock<std::mutex>(mlock_target);
+            double distance = 0.0;
+            distance = sqrt(pow(ms_currentTarget.linear.x - target->linear.x, 2.0) + pow(ms_currentTarget.linear.y - target->linear.y, 2.0));
+            distance += 10 * abs(ms_currentTarget.angular.z - target->angular.z);
+            if (distance < 1.0) {
+                return true;
+            }
+            ms_currentTarget.linear.x = target->linear.x;
+            ms_currentTarget.linear.y = target->linear.y;
+            ms_currentTarget.angular.z = target->angular.z;
+            ROS_INFO("%s new target: x:%f y:%f phi:%f", m_name.c_str(), ms_currentTarget.linear.x, ms_currentTarget.linear.y, ms_currentTarget.angular.z);
+        }
         m_moveState = true;
         return true;
     }
