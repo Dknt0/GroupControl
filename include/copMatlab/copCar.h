@@ -6,6 +6,9 @@
  * Dknt 2023.10.21
 */
 
+#ifndef COPCAR_H
+#define COPCAR_H
+
 #include <iostream>
 #include <string>
 #include <chrono>
@@ -255,3 +258,5 @@ private:
     ros::Subscriber m_targetSub;
 
 };
+
+#endif // COPCAR_H

@@ -6,6 +6,9 @@
  * Dknt 2023.10.21
 */
 
+#ifndef COPCARENHANCED_H
+#define COPCARENHANCED_H
+
 #include <iostream>
 #include <string>
 #include <chrono>
@@ -292,3 +295,5 @@ private:
     ros::Subscriber m_targetSub;
 
 };
+
+#endif // COPCARENHANCED_H
